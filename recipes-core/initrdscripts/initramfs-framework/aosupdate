@@ -1,0 +1,262 @@
+#!/bin/sh
+
+# This module requires the following boot parameters:
+#     aosupdate.device         - specifies device where update artifacts are stored;
+#     aosupdate.path           - specifies path whre update artifacts are stored;
+#     aosupdate.selinux_module - specifies SELinux module.
+
+# consts
+
+UPDATED_FLAG="updated"
+FAIL_FLAG="failed"
+DO_UPDATE_FLAG="do_update"
+DO_APPLY_FLAG="do_apply"
+
+UPDATE_MOUNT="/mnt/device"
+IMAGE_MOUNT="/mnt/image"
+
+UPDATE_IMAGE=""
+UPDATE_DIR="${bootparam_aosupdate_disk:+${UPDATE_MOUNT}/}${bootparam_aosupdate_path:-update_rootfs}"
+UPDATE_EXT="*.squashfs"
+
+fail() {
+    err="${1:-"unknown error"}"
+
+    # NOTE <3> is KERN_ERR loglevel, which cause alerts to be sent
+    echo "<3>Aos update failed: $err" >/dev/kmsg
+
+    # Put to fail flag file if update mounted
+    if [ -z "${bootparam_aosupdate_disk}" ] || grep -qs "$UPDATE_MOUNT" /proc/mounts; then
+        mkdir -p "$UPDATE_DIR"
+        echo "$err" >"$UPDATE_DIR/$FAIL_FLAG"
+    fi
+}
+
+error() {
+    (
+        echo "$@" 1>&2
+        exit 1
+    )
+}
+
+aosupdate_enabled() {
+    if [ -z "${bootparam_aosupdate_disk}" ] && [ -z "${bootparam_aosupdate_path}" ]; then
+        return 1
+    fi
+
+    if [ -n "${bootparam_aosupdate_disk}" ] && [ ! -e "${bootparam_aosupdate_disk}" ]; then
+        msg "Aos update disabled: device ${bootparam_aosupdate_disk} not exist."
+        return 1
+    fi
+
+    return 0
+}
+
+mount_update_disk() {
+    msg "Mount update disk: $bootparam_aosupdate_disk"
+
+    mkdir -p "$UPDATE_MOUNT"
+    mount "$bootparam_aosupdate_disk" "$UPDATE_MOUNT"
+}
+
+umount_update_disk() {
+    if grep -qs "$UPDATE_MOUNT" /proc/mounts && [ ! -f "$UPDATE_DIR/$UPDATED_FLAG" ]; then
+        msg "Umount update disk: $bootparam_aosupdate_disk"
+
+        umount "$UPDATE_MOUNT"
+    fi
+}
+
+load_selinux_module() {
+    if [ -z "${bootparam_aosupdate_selinux_module}" ]; then
+        return
+    fi
+
+    msg "Loading selinux module: $bootparam_aosupdate_selinux_module"
+
+    if [ -n "${bootparam_aosupdate_disk}" ]; then
+        umount "$UPDATE_MOUNT"
+    fi
+
+    mount -t selinuxfs selinuxfs /sys/fs/selinux
+    semodule -i "$bootparam_aosupdate_selinux_module"
+
+    if [ -n "${bootparam_aosupdate_disk}" ]; then
+        msg "Remount update disk: $bootparam_aosupdate_disk"
+
+        mount "$bootparam_aosupdate_disk" "$UPDATE_MOUNT" -o context="system_u:object_r:aos_var_run_t:s0"
+    fi
+}
+
+mount_update_image() {
+    msg "Mount update image: $UPDATE_IMAGE"
+
+    mkdir -p "$IMAGE_MOUNT"
+    mount -t squashfs -o loop "$UPDATE_IMAGE" "$IMAGE_MOUNT"
+}
+
+umount_update_image() {
+    if grep -qs "$IMAGE_MOUNT" /proc/mounts; then
+        msg "Umount update image: $UPDATE_IMAGE"
+
+        umount "$IMAGE_MOUNT"
+    fi
+}
+
+# Possible actions are: update, apply, revert
+get_action() {
+    if [ -f "$UPDATE_DIR/$DO_APPLY_FLAG" ]; then
+        echo "apply"
+        return
+    fi
+
+    if [ -f "$UPDATE_DIR/$UPDATED_FLAG" ]; then
+        echo "revert"
+        return
+    fi
+
+    if [ -f "$UPDATE_DIR/$DO_UPDATE_FLAG" ]; then
+        echo "update"
+        return
+    fi
+}
+
+get_update_type() {
+    update=$(cat "$UPDATE_DIR/$DO_UPDATE_FLAG")
+
+    if [ -z "$update" ]; then
+        echo "full"
+    else
+        echo "$update"
+    fi
+}
+
+do_update() {
+    UPDATE_IMAGE="$(find "$UPDATE_DIR" -name "${UPDATE_EXT}" | head -n1)"
+
+    update_type="$(get_update_type)"
+
+    msg "Start $update_type update..."
+
+    if [ -z "$UPDATE_IMAGE" ]; then
+        error "update iamge not found"
+    fi
+
+    load_selinux_module
+    mount_update_image
+
+    case "$update_type" in
+    full)
+	mount --bind "$ROOTFS_DIR"/var "$IMAGE_MOUNT"/var
+	while read -r name size; do
+		mount --bind "$ROOTFS_DIR"/var/aos/"$name" "$IMAGE_MOUNT"/var/aos/"$name"
+	done <$ROOTFS_DIR/opt/aos/aosdisk.cfg
+        mount --move "$IMAGE_MOUNT" "$ROOTFS_DIR"
+        ;;
+
+    incremental)
+        mount -t overlay overlay -o lowerdir="$IMAGE_MOUNT":"$ROOTFS_DIR $ROOTFS_DIR"
+        ;;
+
+    *)
+        error "unknown update type: $update_type"
+        ;;
+    esac
+
+    touch "$UPDATE_DIR"/"$UPDATED_FLAG"
+
+    msg "Successfully updated!"
+}
+
+do_revert() {
+    msg "Revert update"
+
+    clear_all_flags
+
+    error "update not confirmed"
+}
+
+cleanup() {
+    umount_update_image
+}
+
+clear_all_flags() {
+    rm -f "$UPDATE_DIR/$DO_UPDATE_FLAG" "$UPDATE_DIR/$UPDATED_FLAG" "$UPDATE_DIR/$DO_APPLY_FLAG" "$UPDATE_DIR/$FAIL_FLAG"
+}
+
+do_apply() {
+    UPDATE_IMAGE="$(find "$UPDATE_DIR" -name "${UPDATE_EXT}" | head -n1)"
+
+    update_type="$(get_update_type)"
+
+    msg "Start $update_type apply..."
+
+    load_selinux_module
+    mount_update_image
+
+    case "$update_type" in
+    full)
+        rsync -av -A -X --ignore-times "$IMAGE_MOUNT/" "$ROOTFS_DIR/"
+
+        find "$ROOTFS_DIR/" -type c -exec rm -f {} \;
+        ;;
+
+    incremental)
+        rsync -av -A -X --ignore-times "$IMAGE_MOUNT/" "$ROOTFS_DIR/"
+
+        find "$ROOTFS_DIR/" -type c -exec rm -f {} \;
+        ;;
+    *)
+        error "unknown update type: $update_type"
+        ;;
+    esac
+
+    cleanup
+    clear_all_flags
+
+    msg "Successfully applied!"
+}
+
+aosupdate_run() {
+    msg "======================================= Aos update ======================================="
+
+    err=$(
+        {
+            set -e
+
+            if [ -n "${bootparam_aosupdate_disk}" ]; then
+                mount_update_disk
+            fi
+
+            case "$(get_action)" in
+            update)
+                do_update
+                ;;
+
+            revert)
+                do_revert
+                ;;
+
+            apply)
+                do_apply
+                ;;
+
+            *)
+                msg "Aos update: no action selected"
+                ;;
+            esac
+
+        } 2>&1 >/dev/null
+    )
+
+    if [ $? -ne 0 ]; then
+        fail "$err"
+        cleanup
+    fi
+
+    if [ -n "${bootparam_aosupdate_disk}" ]; then
+        umount_update_disk
+    fi
+
+    msg "=========================================================================================="
+}
