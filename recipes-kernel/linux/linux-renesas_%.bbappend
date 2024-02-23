@@ -12,6 +12,7 @@ SRC_URI:remove = "${RENESAS_BSP_URL};nocheckout=1;branch=${BRANCH};protocol=http
 SRC_URI:append = " git://${TOPDIR}/../repo/linux-bsp;nocheckout=1;branch=${BRANCH};protocol=file \
 	file://0002-net-ethernet-renesas-rswitch-Update-driver-to-match-.patch \
 	file://0002-net-ethernet-renesas-rswitch-Disable-reset-controlle.patch \
+	file://aos.cfg \
 "
 
 #KERNEL_VERSION_SANITY_SKIP="1"
