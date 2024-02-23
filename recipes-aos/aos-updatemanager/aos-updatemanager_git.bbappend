@@ -4,6 +4,7 @@ SRC_URI += " \
     file://aos-reboot.service \
     file://aos-dirs-service.conf \
     file://reboot-on-failure.conf \
+	file://0001-Reboot-manually.patch \
 "
 
 AOS_UM_UPDATE_MODULES = " \

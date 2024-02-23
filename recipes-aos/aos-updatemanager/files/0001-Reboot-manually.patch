@@ -1,0 +1,43 @@
+diff --git a/src/github.com/aoscloud/aos_updatemanager/updatemodules/partitions/rebooters/systemdrebooter/systemdrebooter.go b/src/github.com/aoscloud/aos_updatemanager/updatemodules/partitions/rebooters/systemdrebooter/systemdrebooter.go
+index 1f9cf05..40c50ec 100644
+--- a/src/github.com/aoscloud/aos_updatemanager/updatemodules/partitions/rebooters/systemdrebooter/systemdrebooter.go
++++ b/src/github.com/aoscloud/aos_updatemanager/updatemodules/partitions/rebooters/systemdrebooter/systemdrebooter.go
+@@ -18,11 +18,8 @@
+ package systemdrebooter
+ 
+ import (
+-	"context"
+-	"os"
+-
+-	"github.com/aoscloud/aos_common/aoserrors"
+-	"github.com/coreos/go-systemd/v22/dbus"
++	"time"
++	log "github.com/sirupsen/logrus"
+ )
+ 
+ /*******************************************************************************
+@@ -38,21 +35,9 @@ type SystemdRebooter struct{}
+ 
+ // Reboot reboots the system.
+ func (controller *SystemdRebooter) Reboot() (err error) {
+-	systemd, err := dbus.NewSystemConnectionContext(context.Background())
+-	if err != nil {
+-		return aoserrors.Wrap(err)
+-	}
+-	defer systemd.Close()
+-
+-	channel := make(chan string)
+-
+-	if _, err = systemd.StartUnitContext(context.Background(), "reboot.target", "replace-irreversibly", nil); err != nil {
+-		return aoserrors.Wrap(err)
++	for {
++		log.Debug("Reboot required, Please sync and trigger reboot manually")
++		time.Sleep(time.Second)
+ 	}
+-
+-	<-channel
+-
+-	defer os.Exit(0)
+-
+ 	return nil
+ }
