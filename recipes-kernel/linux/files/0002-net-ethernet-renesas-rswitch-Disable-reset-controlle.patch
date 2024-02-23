@@ -1,0 +1,36 @@
+From 0272cd490608fa17627da4d949bc1fb10dac68b6 Mon Sep 17 00:00:00 2001
+From: "T.Chuong" <phamanhchuong.tran.ra@renesas.com>
+Date: Fri, 10 Mar 2023 09:55:24 +0900
+Subject: [PATCH 2/3] net: ethernet: renesas: rswitch: Disable reset controller
+ when using in VPF environment
+
+Disable reset controller process part.
+Ticket number: <ASDVDKSW-2>
+
+Signed-off-by: T.Chuong <phamanhchuong.tran.ra@renesas.com>
+---
+ drivers/net/ethernet/renesas/rswitch.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/renesas/rswitch.c b/drivers/net/ethernet/renesas/rswitch.c
+index b41537560751..9375901c2246 100644
+--- a/drivers/net/ethernet/renesas/rswitch.c
++++ b/drivers/net/ethernet/renesas/rswitch.c
+@@ -2214,9 +2214,11 @@ static void rswitch_reset(struct rswitch_private *priv)
+ 		rs_write32(RRC_RR, priv->addr + RRC);
+ 		rs_write32(RRC_RR_CLR, priv->addr + RRC);
+ 
+-		reset_control_assert(priv->sd_rst);
+-		mdelay(1);
+-		reset_control_deassert(priv->sd_rst);
++		if(!priv->vpf_mode){
++			reset_control_assert(priv->sd_rst);
++			mdelay(1);
++			reset_control_deassert(priv->sd_rst);
++		}
+ 	} else {
+ 		int gwca_idx;
+ 		u32 gwro_offset;
+-- 
+2.25.1
+
