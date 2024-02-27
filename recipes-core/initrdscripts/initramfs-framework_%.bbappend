@@ -5,11 +5,11 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/initramfs-framework:"
 
 SRC_URI += " \
-	file://createdisk \
+    file://createdisk \
 "
 
 PACKAGES += " \
-	initramfs-module-createdisk \
+    initramfs-module-createdisk \
 "
 
 SUMMARY:initramfs-module-createdisk = "create loop device"
@@ -17,5 +17,5 @@ RDEPENDS:initramfs-module-createdisk = "${PN}-base e2fsprogs"
 FILES:initramfs-module-createdisk = "/init.d/94-createdisk"
 
 do_install:append() {
-	install -m 0755 ${WORKDIR}/createdisk ${D}/init.d/94-createdisk
+    install -m 0755 ${WORKDIR}/createdisk ${D}/init.d/94-createdisk
 }
