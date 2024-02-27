@@ -1,0 +1,19 @@
+#!/bin/sh
+
+createdisk_enabled() {
+    return 0
+}
+
+createdisk_run() {
+  if [ ! -d $ROOTFS_DIR/var/aos/workdirs ]; then
+    while read -r name size; do
+      dd if=/dev/zero of=$ROOTFS_DIR/var/"$name" bs=1M count="$size"
+      mkfs.ext4 $ROOTFS_DIR/var/"$name"
+      mkdir -p $ROOTFS_DIR/var/aos/"$name"
+    done <$ROOTFS_DIR/opt/aos/aosdisk.cfg
+  fi
+  
+  while read -r name size; do
+      mount -o loop,defaults $ROOTFS_DIR/var/"$name" $ROOTFS_DIR/var/aos/"$name"
+  done <$ROOTFS_DIR/opt/aos/aosdisk.cfg
+}
